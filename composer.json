@@ -1,0 +1,44 @@
+{
+    "name": "jorisnoo/craft-blitz-bunny-purge",
+    "description": "Bunny CDN reverse proxy purger for the Blitz Craft CMS plugin.",
+    "keywords": [
+        "craftcms",
+        "blitz",
+        "bunny",
+        "cdn",
+        "purge",
+        "cache"
+    ],
+    "homepage": "https://github.com/jorisnoo/craft-blitz-bunny-purge",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Joris Noordermeer",
+            "email": "contact@noordermeer.ch",
+            "homepage": "https://github.com/jorisnoo",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^8.2",
+        "craftcms/cms": "^4.0",
+        "putyourlightson/craft-blitz": "^4.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Noo\\CraftBlitzBunnyPurge\\": "src/"
+        }
+    },
+    "extra": {
+        "handle": "blitz-bunny-purge",
+        "name": "Blitz Bunny Purge",
+        "developer": "Joris Noordermeer",
+        "developerUrl": "https://github.com/jorisnoo",
+        "class": "Noo\\CraftBlitzBunnyPurge\\Plugin"
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
