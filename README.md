@@ -52,6 +52,26 @@ BUNNY_API_KEY=your-api-key-here
 
 Then reference it in the control panel as `$BUNNY_API_KEY`.
 
+### Config File
+
+Alternatively, you can configure the purger via `config/blitz.php` instead of the control panel:
+
+```php
+<?php
+
+use craft\helpers\App;
+use Noo\CraftBlitzBunnyPurge\BunnyPurger;
+
+return [
+    'cachePurgerType' => BunnyPurger::class,
+    'cachePurgerSettings' => [
+        'apiUrl' => App::env('BUNNY_API_URL') ?: 'https://api.bunny.net/purge',
+        'apiKey' => App::env('BUNNY_API_KEY'),
+        'authType' => 'access_key', // or 'bearer'
+    ],
+];
+```
+
 ## How It Works
 
 ### Individual URL Purging
