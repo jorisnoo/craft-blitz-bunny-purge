@@ -10,6 +10,7 @@
         "cache"
     ],
     "homepage": "https://github.com/jorisnoo/craft-blitz-bunny-purge",
+    "type": "craft-plugin",
     "license": "MIT",
     "authors": [
         {
@@ -19,6 +20,10 @@
             "role": "Developer"
         }
     ],
+    "support": {
+        "source": "https://github.com/jorisnoo/craft-blitz-bunny-purge",
+        "issues": "https://github.com/jorisnoo/craft-blitz-bunny-purge/issues"
+    },
     "require": {
         "php": "^8.2",
         "craftcms/cms": "^4.0",
