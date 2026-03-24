@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0] - Unreleased
+
+### Breaking Changes
+
+- Requires Craft CMS 5.0+ and Blitz 5.0+
+- For Craft 4 support, use the `craft-4` branch
+
 ## [0.1.0](https://github.com/jorisnoo/craft-blitz-bunny-purge/releases/tag/v0.1.0) (2026-03-10)
 
 ### Documentation

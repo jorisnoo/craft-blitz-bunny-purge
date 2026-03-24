@@ -5,7 +5,7 @@ namespace Noo\CraftBlitzBunnyPurge;
 use craft\base\Plugin as BasePlugin;
 use craft\events\RegisterComponentTypesEvent;
 use putyourlightson\blitz\helpers\CachePurgerHelper;
-use yii\base\Event;
+use craft\base\Event;
 
 class Plugin extends BasePlugin
 {

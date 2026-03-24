@@ -14,8 +14,8 @@ When Blitz invalidates cached content, this purger automatically sends purge req
 
 ## Requirements
 
-- Craft CMS 4.0+
-- Blitz 4.0+
+- Craft CMS 5.0+
+- Blitz 5.0+
 - PHP 8.2+
 
 ## Installation
