@@ -2,13 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.0.0] - Unreleased
+## [1.0.0](https://github.com/jorisnoo/craft-blitz-bunny-purge/releases/tag/v1.0.0) (2026-05-12)
 
-### Breaking Changes
+### ⚠ BREAKING CHANGES
 
-- Requires Craft CMS 5.0+ and Blitz 5.0+
-- For Craft 4 support, use the `craft-4` branch
+- require Craft CMS 5.0 and Blitz 5.0 ([8106b2d](https://github.com/jorisnoo/craft-blitz-bunny-purge/commit/8106b2d104f8524d0c537dfcd7150b2b2bd11736))
 
+### Features
+
+- add HttpGenerator with custom User-Agent header ([75de2e5](https://github.com/jorisnoo/craft-blitz-bunny-purge/commit/75de2e522144d462e8121ec5332f0677f1561e68))
+
+### Continuous Integration
+
+- simplify dependabot auto-merge workflow ([d51f343](https://github.com/jorisnoo/craft-blitz-bunny-purge/commit/d51f3435c4328af87c8980a6cb4bda8c4968cd09))
+- add dependabot configuration and auto-merge workflow ([0d9197e](https://github.com/jorisnoo/craft-blitz-bunny-purge/commit/0d9197e4ccae31fb8405d3a24d6c66c68b188025))
+
+### Chores
+
+- add .gitignore for vendor and composer.lock ([6f59165](https://github.com/jorisnoo/craft-blitz-bunny-purge/commit/6f59165950dd380d754d2f981af1162b007e7c4d))
+- require Craft CMS 5.0 and Blitz 5.0 ([8106b2d](https://github.com/jorisnoo/craft-blitz-bunny-purge/commit/8106b2d104f8524d0c537dfcd7150b2b2bd11736))
 ## [0.1.0](https://github.com/jorisnoo/craft-blitz-bunny-purge/releases/tag/v0.1.0) (2026-03-10)
 
 ### Documentation
