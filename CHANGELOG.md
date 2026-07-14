@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.1](https://github.com/jorisnoo/craft-blitz-bunny-purge/releases/tag/v1.0.1) (2026-07-14)
+
+### Features
+
+- make batch size configurable for Bunny CDN purge requests ([b0f0152](https://github.com/jorisnoo/craft-blitz-bunny-purge/commit/b0f0152df2db4be9d49b8bfb5378a9dfec109ebe))
+
+### Chores
+
+- tidy composer.json metadata and add justfile ([fecf4f8](https://github.com/jorisnoo/craft-blitz-bunny-purge/commit/fecf4f87d8e146cd247a3f1abafcbc1d36e55a0f))
+- **deps:** bump actions/checkout from 6 to 7 ([9caa4ae](https://github.com/jorisnoo/craft-blitz-bunny-purge/commit/9caa4ae60694c1d0683bf91f395e21f26913e2d8))
 ## [1.0.0](https://github.com/jorisnoo/craft-blitz-bunny-purge/releases/tag/v1.0.0) (2026-05-12)
 
 ### ⚠ BREAKING CHANGES
