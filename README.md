@@ -8,7 +8,7 @@ When Blitz invalidates cached content, this purger automatically sends purge req
 
 - Automatic CDN cache purging when content changes
 - Wildcard purging for full site clears (sends `site/*` instead of enumerating every URL)
-- Batched URL purging (up to 100 URLs per request)
+- Batched URL purging with a configurable batch size
 - Configurable API endpoint and authentication method
 - Environment variable support for all settings
 
@@ -39,6 +39,7 @@ Then go to **Settings > Plugins** in the Craft control panel and install the plu
 | **API URL** | The Bunny CDN purge API endpoint | `https://api.bunny.net/purge` |
 | **API Key** | Your Bunny CDN API key | — |
 | **Authentication Type** | `Access Key` or `Bearer Token` | `Access Key` |
+| **Batch Size** | Maximum URLs sent in each purge request | `500` |
 
 All settings support environment variables (e.g., `$BUNNY_API_KEY`).
 
@@ -68,6 +69,7 @@ return [
         'apiUrl' => App::env('BUNNY_API_URL') ?: 'https://api.bunny.net/purge',
         'apiKey' => App::env('BUNNY_API_KEY'),
         'authType' => 'access_key', // or 'bearer'
+        'batchSize' => 500,
     ],
 ];
 ```
@@ -76,7 +78,7 @@ return [
 
 ### Individual URL Purging
 
-When Blitz invalidates specific URLs, the purger sends them to the Bunny CDN API in batches of up to 100 URLs per request:
+When Blitz invalidates specific URLs, the purger sends them to the Bunny CDN API in configurable batches of 500 URLs by default:
 
 ```
 POST https://api.bunny.net/purge

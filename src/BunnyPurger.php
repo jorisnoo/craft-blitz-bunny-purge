@@ -13,13 +13,18 @@ use yii\log\Logger;
 
 class BunnyPurger extends BaseCachePurger
 {
-    public const API_URL_LIMIT = 100;
+    public const DEFAULT_BATCH_SIZE = 500;
+
+    /** @deprecated Use $batchSize instead. */
+    public const API_URL_LIMIT = self::DEFAULT_BATCH_SIZE;
 
     public string $apiUrl = 'https://api.bunny.net/purge';
 
     public ?string $apiKey = null;
 
     public string $authType = 'access_key';
+
+    public int|string $batchSize = self::DEFAULT_BATCH_SIZE;
 
     public static function displayName(): string
     {
@@ -32,13 +37,14 @@ class BunnyPurger extends BaseCachePurger
             'apiUrl' => Craft::t('blitz', 'API URL'),
             'apiKey' => Craft::t('blitz', 'API Key'),
             'authType' => Craft::t('blitz', 'Authentication Type'),
+            'batchSize' => Craft::t('blitz', 'Batch Size'),
         ];
     }
 
     /**
      * Override to send wildcard purge instead of enumerating all URIs.
      */
-    public function purgeSite(int $siteId, callable $setProgressHandler = null, bool $queue = true): void
+    public function purgeSite(int $siteId, ?callable $setProgressHandler = null, bool $queue = true): void
     {
         $site = Craft::$app->getSites()->getSiteById($siteId);
 
@@ -51,7 +57,7 @@ class BunnyPurger extends BaseCachePurger
         $this->sendPurgeRequest([$baseUrl, "{$baseUrl}/*"]);
     }
 
-    public function purgeUrisWithProgress(array $siteUris, callable $setProgressHandler = null): void
+    public function purgeUrisWithProgress(array $siteUris, ?callable $setProgressHandler = null): void
     {
         $urls = SiteUriHelper::getUrlsFromSiteUris($siteUris);
 
@@ -63,7 +69,8 @@ class BunnyPurger extends BaseCachePurger
             call_user_func($setProgressHandler, $count, $total, Craft::t('blitz', $label, ['total' => $total]));
         }
 
-        $batches = array_chunk($urls, self::API_URL_LIMIT);
+        $batchSize = max(1, (int) App::parseEnv($this->batchSize));
+        $batches = array_chunk($urls, $batchSize);
 
         foreach ($batches as $batch) {
             $this->sendPurgeRequest($batch);
@@ -119,6 +126,17 @@ class BunnyPurger extends BaseCachePurger
                     ['value' => 'access_key', 'label' => 'Access Key'],
                     ['value' => 'bearer', 'label' => 'Bearer Token'],
                 ],
+            ]) .
+            Cp::autosuggestFieldHtml([
+                'label' => Craft::t('blitz', 'Batch Size'),
+                'instructions' => Craft::t('blitz', 'The maximum number of URLs sent in each purge request.'),
+                'id' => 'batchSize',
+                'name' => 'batchSize',
+                'value' => $this->batchSize,
+                'type' => 'number',
+                'min' => 1,
+                'required' => true,
+                'suggestEnvVars' => true,
             ]);
     }
 
@@ -127,7 +145,7 @@ class BunnyPurger extends BaseCachePurger
         return [
             'parser' => [
                 'class' => EnvAttributeParserBehavior::class,
-                'attributes' => ['apiUrl', 'apiKey'],
+                'attributes' => ['apiUrl', 'apiKey', 'batchSize'],
             ],
         ];
     }
@@ -136,6 +154,8 @@ class BunnyPurger extends BaseCachePurger
     {
         return [
             [['apiKey'], 'required'],
+            [['batchSize'], 'required'],
+            [['batchSize'], 'integer', 'min' => 1],
         ];
     }
 
