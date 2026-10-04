@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.0.1](https://github.com/jorisnoo/craft-blitz-bunny-purge/releases/tag/v1.0.1) (2026-07-14)
+## [1.0.1](https://github.com/jorisnoo/craft-blitz-bunny-purge/releases/tag/1.0.1) (2026-07-14)
 
 ### Features
 
@@ -12,7 +12,7 @@ All notable changes to this project will be documented in this file.
 
 - tidy composer.json metadata and add justfile ([fecf4f8](https://github.com/jorisnoo/craft-blitz-bunny-purge/commit/fecf4f87d8e146cd247a3f1abafcbc1d36e55a0f))
 - **deps:** bump actions/checkout from 6 to 7 ([9caa4ae](https://github.com/jorisnoo/craft-blitz-bunny-purge/commit/9caa4ae60694c1d0683bf91f395e21f26913e2d8))
-## [1.0.0](https://github.com/jorisnoo/craft-blitz-bunny-purge/releases/tag/v1.0.0) (2026-05-12)
+## [1.0.0](https://github.com/jorisnoo/craft-blitz-bunny-purge/releases/tag/1.0.0) (2026-05-12)
 
 ### ⚠ BREAKING CHANGES
 
@@ -31,7 +31,7 @@ All notable changes to this project will be documented in this file.
 
 - add .gitignore for vendor and composer.lock ([6f59165](https://github.com/jorisnoo/craft-blitz-bunny-purge/commit/6f59165950dd380d754d2f981af1162b007e7c4d))
 - require Craft CMS 5.0 and Blitz 5.0 ([8106b2d](https://github.com/jorisnoo/craft-blitz-bunny-purge/commit/8106b2d104f8524d0c537dfcd7150b2b2bd11736))
-## [0.1.0](https://github.com/jorisnoo/craft-blitz-bunny-purge/releases/tag/v0.1.0) (2026-03-10)
+## [0.1.0](https://github.com/jorisnoo/craft-blitz-bunny-purge/releases/tag/0.1.0) (2026-03-10)
 
 ### Documentation
 
