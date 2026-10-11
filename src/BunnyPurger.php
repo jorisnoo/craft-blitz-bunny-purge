@@ -6,14 +6,22 @@ use Craft;
 use craft\behaviors\EnvAttributeParserBehavior;
 use craft\helpers\App;
 use craft\helpers\Cp;
+use craft\helpers\UrlHelper;
 use putyourlightson\blitz\Blitz;
 use putyourlightson\blitz\drivers\purgers\BaseCachePurger;
+use putyourlightson\blitz\helpers\CachePurgerHelper;
 use putyourlightson\blitz\helpers\SiteUriHelper;
+use putyourlightson\blitz\models\SiteUriModel;
+use RuntimeException;
 use yii\log\Logger;
 
 class BunnyPurger extends BaseCachePurger
 {
     public const DEFAULT_BATCH_SIZE = 500;
+
+    public const CONNECT_TIMEOUT = 10;
+
+    public const TIMEOUT = 30;
 
     /** @deprecated Use $batchSize instead. */
     public const API_URL_LIMIT = self::DEFAULT_BATCH_SIZE;
@@ -42,19 +50,55 @@ class BunnyPurger extends BaseCachePurger
     }
 
     /**
-     * Override to send wildcard purge instead of enumerating all URIs.
+     * Override to send a wildcard purge instead of enumerating all URIs.
      */
     public function purgeSite(int $siteId, ?callable $setProgressHandler = null, bool $queue = true): void
     {
-        $site = Craft::$app->getSites()->getSiteById($siteId);
+        $siteUris = [new SiteUriModel(['siteId' => $siteId, 'uri' => ''])];
 
-        if ($site === null) {
+        if ($queue) {
+            CachePurgerHelper::addPurgerJob($siteUris, 'purgeSitesWithProgress');
+
             return;
         }
 
-        $baseUrl = rtrim(App::parseEnv($site->getBaseUrl()), '/');
+        $this->purgeSitesWithProgress($siteUris, $setProgressHandler);
+    }
 
-        $this->sendPurgeRequest([$baseUrl, "{$baseUrl}/*"]);
+    /**
+     * Sends a wildcard purge for each site referenced by the given site URIs.
+     * Called directly or from a Blitz driver job queued by `purgeSite()`.
+     *
+     * @param SiteUriModel[]|array[] $siteUris
+     */
+    public function purgeSitesWithProgress(array $siteUris, ?callable $setProgressHandler = null): void
+    {
+        $siteIds = array_values(array_unique(array_map(
+            fn (SiteUriModel|array $siteUri): int => (int) ($siteUri instanceof SiteUriModel ? $siteUri->siteId : $siteUri['siteId']),
+            $siteUris,
+        )));
+
+        $count = 0;
+        $total = count($siteIds);
+        $label = 'Purging {total} site(s)';
+
+        if (is_callable($setProgressHandler)) {
+            call_user_func($setProgressHandler, $count, $total, Craft::t('blitz', $label, ['total' => $total]));
+        }
+
+        foreach ($siteIds as $siteId) {
+            $baseUrl = $this->getSiteBaseUrl($siteId);
+
+            if ($baseUrl !== null) {
+                $this->sendPurgeRequest([$baseUrl, "{$baseUrl}/*"]);
+            }
+
+            $count++;
+
+            if (is_callable($setProgressHandler)) {
+                call_user_func($setProgressHandler, $count, $total, Craft::t('blitz', $label, ['total' => $total]));
+            }
+        }
     }
 
     public function purgeUrisWithProgress(array $siteUris, ?callable $setProgressHandler = null): void
@@ -159,38 +203,57 @@ class BunnyPurger extends BaseCachePurger
         ];
     }
 
-    /** @param string[] $urls */
-    private function sendPurgeRequest(array $urls): bool
+    /**
+     * Returns the absolute base URL of a site without a trailing slash, or
+     * null if the site does not exist or its base URL cannot be resolved to
+     * an absolute URL (a relative base URL would purge `/*`).
+     */
+    private function getSiteBaseUrl(int $siteId): ?string
     {
-        $apiKey = App::parseEnv($this->apiKey);
-
-        if (empty($apiKey)) {
-            Blitz::$plugin->log('Bunny CDN purge API key not configured.', [], Logger::LEVEL_WARNING);
-
-            return false;
+        if (Craft::$app->getSites()->getSiteById($siteId, true) === null) {
+            return null;
         }
 
+        $baseUrl = rtrim(UrlHelper::siteUrl('', null, null, $siteId), '/');
+
+        if (parse_url($baseUrl, PHP_URL_HOST) === null) {
+            Blitz::$plugin->log(
+                'Skipped Bunny CDN site purge for site {siteId}: base URL “{baseUrl}” is not absolute.',
+                ['siteId' => $siteId, 'baseUrl' => $baseUrl],
+                Logger::LEVEL_WARNING,
+            );
+
+            return null;
+        }
+
+        return $baseUrl;
+    }
+
+    /**
+     * Throws on failure so Blitz reports the error and the queue job can retry.
+     *
+     * @param string[] $urls
+     */
+    private function sendPurgeRequest(array $urls): void
+    {
+        $apiKey = App::parseEnv($this->apiKey);
         $apiUrl = App::parseEnv($this->apiUrl);
+
+        if (empty($apiKey) || empty($apiUrl)) {
+            throw new RuntimeException('Bunny CDN purge API URL or key not configured.');
+        }
 
         $headers = array_merge(
             ['Content-Type' => 'application/json'],
             $this->authHeaders($apiKey),
         );
 
-        $client = Craft::createGuzzleClient();
-
-        try {
-            $client->post($apiUrl, [
-                'headers' => $headers,
-                'json' => ['urls' => $urls],
-            ]);
-
-            return true;
-        } catch (\Throwable $e) {
-            Blitz::$plugin->log($e->getMessage(), [], Logger::LEVEL_ERROR);
-
-            return false;
-        }
+        Craft::createGuzzleClient()->post($apiUrl, [
+            'headers' => $headers,
+            'json' => ['urls' => $urls],
+            'connect_timeout' => self::CONNECT_TIMEOUT,
+            'timeout' => self::TIMEOUT,
+        ]);
     }
 
     /** @return array<string, string> */

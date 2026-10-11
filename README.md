@@ -94,6 +94,12 @@ POST https://api.bunny.net/purge
 {"urls": ["https://example.com", "https://example.com/*"]}
 ```
 
+Like individual URL purges, site purges respect Blitz's queue setting and run in a Blitz queue job by default. The site's base URL must resolve to an absolute URL; if it is relative (e.g. `/`), the site purge is skipped and a warning is logged instead of purging `/*`.
+
+### Error Handling
+
+Purge requests use a 10-second connect timeout and a 30-second request timeout. Missing credentials, transport errors and error responses throw, so the Blitz queue job fails and is retried according to Blitz's `maxRetryAttempts` setting.
+
 ### Authentication
 
 - **Access Key** (default): Sends an `AccessKey` header
