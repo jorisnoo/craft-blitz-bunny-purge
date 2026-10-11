@@ -105,6 +105,14 @@ Purge requests use a 10-second connect timeout and a 30-second request timeout. 
 - **Access Key** (default): Sends an `AccessKey` header
 - **Bearer Token**: Sends an `Authorization: Bearer` header
 
+## HTTP Generator
+
+The package also ships `Noo\CraftBlitzBunnyPurge\HttpGenerator`, a drop-in replacement for Blitz's HTTP cache generator that sends requests with the `User-Agent: Blitz-Cache-Generator` header. Use it to identify cache-warming requests, for example in Bunny CDN edge rules, firewalls or analytics. It is not registered in the control panel; enable it in `config/blitz.php`:
+
+```php
+'cacheGeneratorType' => \Noo\CraftBlitzBunnyPurge\HttpGenerator::class,
+```
+
 ## License
 
 [MIT](LICENSE.md)
