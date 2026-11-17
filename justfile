@@ -9,3 +9,7 @@ install:
 # Update dependencies
 update:
     composer update
+
+# Run tests
+test:
+    vendor/bin/pest
