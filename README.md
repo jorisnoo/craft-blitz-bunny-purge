@@ -79,7 +79,7 @@ return [
 
 ### Individual URL Purging
 
-The [Bunny Core API](https://bunny.net/docs/api-reference/core/purge/purge-url) takes one URL per authenticated request:
+The plugin uses the [documented Bunny Core API request](https://bunny.net/docs/api-reference/core/purge/purge-url): an authenticated POST with one `url` query parameter. Existing escapes in that URL survive the outer request's query decoding.
 
 ```
 POST https://api.bunny.net/purge?url=https%3A%2F%2Fexample.com%2Fpage-1

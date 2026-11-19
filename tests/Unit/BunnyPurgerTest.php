@@ -49,14 +49,14 @@ beforeEach(function() {
 });
 
 it('sends the documented native Core API request without changing the URL cache key', function() {
-    $this->purger->apiUrl = 'https://api.bunny.net/purge';
-    $urls = ['https://example.test/a?x=1&x=2', 'https://example.test/b/'];
+    $this->purger->apiUrl = 'https://api.bunny.net/purge?async=false&url=replace-me';
+    $urls = ['https://example.test/x%2Fy%20z?x=a%26b&x=a+b', 'https://example.test/b/'];
     $this->http->append(new Response(200), new Response(200));
     $this->purger->purgeUrls($urls);
     foreach ($this->requests as $index => $transaction) {
         $request = $transaction['request'];
         parse_str($request->getUri()->getQuery(), $query);
-        expect($request->getMethod())->toBe('POST')->and($query)->toBe(['url' => $urls[$index]])
+        expect($request->getMethod())->toBe('POST')->and($query)->toBe(['async' => 'false', 'url' => $urls[$index]])
             ->and($request->getHeaderLine('AccessKey'))->toBe('test-only');
     }
     expect($this->requests)->toHaveCount(2);
