@@ -8,6 +8,8 @@
       "validate",
       "--no-check-publish",
       "--no-plugins"
-    ]
+    ],
+    ["vendor/bin/phpstan", "analyse", "--memory-limit=1G", "--no-progress"],
+    ["vendor/bin/pest"]
   ]
 }

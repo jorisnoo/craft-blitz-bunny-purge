@@ -12,11 +12,13 @@ use craft\models\Site;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Exception\RequestException;
-use Noo\CraftBlitzBunnyPurge\jobs\PurgeUrlsJob;
+use GuzzleHttp\Psr7\Uri;
 use putyourlightson\blitz\Blitz;
 use putyourlightson\blitz\drivers\purgers\BaseCachePurger;
 use putyourlightson\blitz\events\RefreshCacheEvent;
+use putyourlightson\blitz\helpers\CachePurgerHelper;
 use putyourlightson\blitz\helpers\SiteUriHelper;
+use putyourlightson\blitz\jobs\DriverJob;
 use yii\log\Logger;
 
 class BunnyPurger extends BaseCachePurger
@@ -36,13 +38,13 @@ class BunnyPurger extends BaseCachePurger
     /** @deprecated Use $batchSize instead. */
     public const API_URL_LIMIT = self::DEFAULT_BATCH_SIZE;
 
-    public string $apiUrl = 'https://api.bunny.net/purge';
+    public ?string $apiUrl = 'https://api.bunny.net/purge';
 
     public ?string $apiKey = null;
 
-    public string $authType = 'access_key';
+    public ?string $authType = 'access_key';
 
-    public int|string $batchSize = self::DEFAULT_BATCH_SIZE;
+    public int|string|null $batchSize = self::DEFAULT_BATCH_SIZE;
 
     public static function displayName(): string
     {
@@ -104,80 +106,133 @@ class BunnyPurger extends BaseCachePurger
         $this->purgeUrlsQueued($this->getSitePurgeUrls($site), $setProgressHandler, $queue);
     }
 
+    public function purgeUris(array $siteUris, ?callable $setProgressHandler = null, bool $queue = true): void
+    {
+        $event = new RefreshCacheEvent(['siteUris' => $siteUris]);
+        $this->trigger(self::EVENT_BEFORE_PURGE_CACHE, $event);
+        if (!$event->isValid) {
+            return;
+        }
+
+        $this->purgeUrlsQueued(SiteUriHelper::getUrlsFromSiteUris($event->siteUris), $setProgressHandler, $queue);
+        if ($this->hasEventHandlers(self::EVENT_AFTER_PURGE_CACHE)) {
+            $this->trigger(self::EVENT_AFTER_PURGE_CACHE, $event);
+        }
+    }
+
     public function purgeUrisWithProgress(array $siteUris, ?callable $setProgressHandler = null): void
     {
         $this->purgeUrls(SiteUriHelper::getUrlsFromSiteUris($siteUris), $setProgressHandler);
     }
 
-    /**
-     * Purges URLs in batches that fit Bunny's rate limits.
-     *
-     * Exact and wildcard URLs go in separate requests. URLs beyond what the
-     * rate-limit buckets allow in one run, and URLs whose request was rate
-     * limited or failed with a server or connection error, are re-queued in a
-     * delayed job. A non-retryable response (such as 400 or 401), or retries
-     * used up, throws a [[PurgeException]] so the queue job fails.
-     *
-     * @param string[] $urls
-     * @param int $attempt Consecutive failed runs before this one.
-     * @throws PurgeException
-     */
-    public function purgeUrls(array $urls, ?callable $setProgressHandler = null, int $attempt = 0): void
+    /** @param string[] $urls */
+    public function purgeUrls(array $urls, ?callable $setProgressHandler = null): void
     {
-        $apiKey = (string) App::parseEnv($this->apiKey);
+        $this->runBatches($urls, $setProgressHandler, false);
+    }
 
-        if ($apiKey === '') {
-            Blitz::$plugin->log('Bunny CDN purge API key not configured.', [], Logger::LEVEL_WARNING);
+    /** Called by Blitz's cancellable purger DriverJob. */
+    public function resumeBunnyPurge(array $work, callable $setProgressHandler): void
+    {
+        $this->runBatches($work['urls'], $setProgressHandler, true, $work['attempt'], $work['tail']);
+    }
 
-            return;
-        }
-
-        $plan = (new PurgeBatcher((int) App::parseEnv($this->batchSize)))->plan($urls);
-
-        $count = 0;
-        $total = $plan->urlCount();
-        $label = 'Purging {total} pages';
-
-        if (is_callable($setProgressHandler)) {
-            call_user_func($setProgressHandler, $count, $total, Craft::t('blitz', $label, ['total' => $total]));
-        }
-
+    private function runBatches(array $urls, ?callable $progress, bool $queued, int $attempt = 0, array $tail = []): void
+    {
+        [$endpoint, $headers] = $this->connection();
         $client = $this->createClient();
+        // Bunny's Core API takes one query parameter. Compatible custom gateways
+        // accept a JSON batch. Both share the same per-URL token budgets.
+        $native = strtolower($endpoint->getHost()) === 'api.bunny.net';
+        $batcher = new PurgeBatcher($native ? 1 : (int) App::parseEnv($this->batchSize));
+        $plan = $batcher->plan($urls);
+        $count = 0;
+        $total = $plan->urlCount() + count($tail);
+        $label = Craft::t('blitz', 'Purging {total} pages', ['total' => $total]);
+        if ($progress !== null) {
+            $progress($count, $total, $label);
+        }
 
-        foreach ($plan->batches as $index => $batch) {
-            try {
-                $this->sendPurgeRequest($client, $apiKey, $batch->urls);
-            } catch (GuzzleException $exception) {
-                $remaining = array_merge($plan->urlsFrom($index), $plan->deferred);
-                $this->handleFailedRequest($exception, $batch, $remaining, $attempt);
+        while (true) {
+            foreach ($plan->batches as $index => $batch) {
+                while (true) {
+                    try {
+                        $options = ['headers' => $headers, 'allow_redirects' => false, 'http_errors' => true];
+                        if ($native) {
+                            $uri = Uri::withQueryValue($endpoint, 'url', $batch->urls[0]);
+                        } else {
+                            $uri = $endpoint;
+                            $options['json'] = ['urls' => $batch->urls];
+                        }
+                        $response = $client->request('POST', $uri, $options);
+                        if (intdiv($response->getStatusCode(), 100) !== 2) {
+                            throw new PurgeException('Bunny CDN purge returned HTTP ' . $response->getStatusCode());
+                        }
+                        break;
+                    } catch (GuzzleException $exception) {
+                        $delay = $this->retryDelay($exception, $batch, $attempt);
+                        ++$attempt;
+                        if ($queued) {
+                            $remaining = array_merge($plan->urlsFrom($index + 1), $plan->deferred, $tail);
+                            $this->queuePurgeJob($batch->urls, $delay, $attempt, $remaining);
+                            return;
+                        }
+                        $this->waitForRefill($delay);
+                    }
+                }
 
+                $attempt = 0;
+                $count += count($batch->urls);
+                if ($progress !== null) {
+                    $progress($count, $total, $label);
+                }
+            }
+
+            $remaining = array_merge($plan->deferred, $tail);
+            if (!$remaining) {
                 return;
             }
-
-            $count += count($batch->urls);
-
-            if (is_callable($setProgressHandler)) {
-                call_user_func($setProgressHandler, $count, $total, Craft::t('blitz', $label, ['total' => $total]));
+            // A queued retry carries its original batch separately. Start the
+            // unattempted tail on a fresh budget once both buckets can refill.
+            $delay = $tail ? max($plan->deferFor, PurgeBatcher::pacingSeconds(true)) : $plan->deferFor;
+            if ($queued) {
+                $this->queuePurgeJob($remaining, $delay);
+                return;
             }
+            $this->waitForRefill($delay);
+            $plan = $batcher->plan($remaining);
+            $tail = [];
         }
+    }
 
-        if ($plan->deferred !== []) {
-            Blitz::$plugin->log('Deferred purging {count} URLs from Bunny CDN for {seconds}s to stay within the rate limit.', [
-                'count' => count($plan->deferred),
-                'seconds' => $plan->deferFor,
-            ]);
-
-            $this->queuePurgeJob($plan->deferred, $plan->deferFor);
+    protected function waitForRefill(int $seconds): void
+    {
+        while (($seconds = sleep($seconds)) > 0) {
+            // Resume the unslept interval if the process received a signal.
         }
     }
 
     public function test(): bool
     {
-        $apiKey = App::parseEnv($this->apiKey);
-
-        if (empty($apiKey)) {
-            $this->addError('apiKey', Craft::t('blitz', 'An API key is required.'));
-
+        try {
+            [$endpoint, $headers] = $this->connection();
+            $native = strtolower($endpoint->getHost()) === 'api.bunny.net';
+            $uri = $native ? $endpoint->withPath('/pullzone')->withQuery('page=1&perPage=5') : $endpoint;
+            $response = $this->createClient()->request('GET', $uri, [
+                'headers' => $headers,
+                'timeout' => 5,
+                'connect_timeout' => 3,
+                'allow_redirects' => false,
+                'http_errors' => false,
+            ]);
+            if (intdiv($response->getStatusCode(), 100) !== 2) {
+                throw new PurgeException('Connection test returned HTTP ' . $response->getStatusCode() . '.');
+            }
+        } catch (PurgeException $e) {
+            $this->addError('apiUrl', $e->getMessage());
+            return false;
+        } catch (GuzzleException) {
+            $this->addError('apiUrl', 'Could not reach the CDN connection-test endpoint.');
             return false;
         }
 
@@ -217,12 +272,13 @@ class BunnyPurger extends BaseCachePurger
             ]) .
             Cp::autosuggestFieldHtml([
                 'label' => Craft::t('blitz', 'Batch Size'),
-                'instructions' => Craft::t('blitz', 'The maximum number of URLs sent in each purge request. Bunny accepts at most 50; larger values are treated as 50.'),
+                'instructions' => Craft::t('blitz', 'Custom gateways accept batches of up to 50 URLs. The Bunny Core API accepts one URL per request.'),
                 'id' => 'batchSize',
                 'name' => 'batchSize',
                 'value' => $this->batchSize,
                 'type' => 'number',
                 'min' => 1,
+                'max' => self::MAX_BATCH_SIZE,
                 'required' => true,
                 'suggestEnvVars' => true,
             ]);
@@ -233,7 +289,7 @@ class BunnyPurger extends BaseCachePurger
         return [
             'parser' => [
                 'class' => EnvAttributeParserBehavior::class,
-                'attributes' => ['apiUrl', 'apiKey', 'batchSize'],
+                'attributes' => ['apiUrl', 'apiKey', 'authType', 'batchSize'],
             ],
         ];
     }
@@ -241,9 +297,10 @@ class BunnyPurger extends BaseCachePurger
     protected function defineRules(): array
     {
         return [
-            [['apiKey'], 'required'],
-            [['batchSize'], 'required'],
-            [['batchSize'], 'integer', 'min' => 1],
+            [['apiKey', 'apiUrl', 'authType', 'batchSize'], 'required'],
+            [['apiUrl'], 'url'],
+            [['authType'], 'in', 'range' => ['access_key', 'bearer']],
+            [['batchSize'], 'integer', 'min' => 1, 'max' => self::MAX_BATCH_SIZE],
         ];
     }
 
@@ -297,12 +354,14 @@ class BunnyPurger extends BaseCachePurger
     /**
      * @param string[] $urls
      */
-    private function queuePurgeJob(array $urls, int $delay = 0, int $attempt = 0): void
+    private function queuePurgeJob(array $urls, int $delay = 0, int $attempt = 0, array $tail = []): void
     {
         Queue::push(
-            job: new PurgeUrlsJob([
-                'urls' => array_values($urls),
-                'attempt' => $attempt,
+            job: new DriverJob([
+                'driverId' => CachePurgerHelper::DRIVER_ID,
+                'driverMethod' => 'resumeBunnyPurge',
+                'siteUris' => ['urls' => $urls, 'attempt' => $attempt, 'tail' => $tail],
+                'description' => Craft::t('blitz', 'Purging Blitz cache'),
             ]),
             priority: Blitz::$plugin->settings->driverJobPriority,
             delay: $delay > 0 ? $delay : null,
@@ -310,13 +369,7 @@ class BunnyPurger extends BaseCachePurger
         );
     }
 
-    /**
-     * Re-queues the unsent URLs after a retryable failure, or throws.
-     *
-     * @param string[] $remaining
-     * @throws PurgeException
-     */
-    private function handleFailedRequest(GuzzleException $exception, PurgeBatch $batch, array $remaining, int $attempt): void
+    private function retryDelay(GuzzleException $exception, PurgeBatch $batch, int $attempt): int
     {
         $response = $exception instanceof RequestException ? $exception->getResponse() : null;
         $status = $response?->getStatusCode();
@@ -330,53 +383,48 @@ class BunnyPurger extends BaseCachePurger
             $reason = "rate limited ({$batch->type()})";
         } elseif ($status === null || $status >= 500) {
             $delay = PurgeBatcher::errorBackoff($attempt, $batch->wildcard);
-            $reason = $status === null ? 'request failed: ' . $exception->getMessage() : "server error {$status}";
+            $reason = $status === null ? 'connection failed' : "server error {$status}";
         } else {
-            $message = "Bunny CDN purge failed with status {$status}: " . mb_substr((string) $response->getBody(), 0, 500);
-            Blitz::$plugin->log('{message}', ['message' => $message], Logger::LEVEL_ERROR);
-
-            throw new PurgeException($message, $status, $exception);
+            throw new PurgeException("Bunny CDN purge failed with status {$status}.", $status, $exception);
         }
 
         $maxAttempts = Blitz::$plugin->settings->maxRetryAttempts;
 
         if ($attempt + 1 >= $maxAttempts) {
-            $message = "Bunny CDN purge gave up on " . count($remaining) . " URLs after {$maxAttempts} attempts, last {$reason}.";
-            Blitz::$plugin->log('{message}', ['message' => $message], Logger::LEVEL_ERROR);
-
-            throw new PurgeException($message, 0, $exception);
+            throw new PurgeException("Bunny CDN purge gave up after {$maxAttempts} attempts, last {$reason}.", 0, $exception);
         }
 
-        Blitz::$plugin->log('Bunny CDN purge {reason}; retrying {count} URLs in {seconds}s.', [
+        Blitz::$plugin->log('Bunny CDN purge {reason}; retrying the batch in {seconds}s.', [
             'reason' => $reason,
-            'count' => count($remaining),
             'seconds' => $delay,
         ], Logger::LEVEL_WARNING);
 
-        $this->queuePurgeJob($remaining, $delay, $attempt + 1);
+        return $delay;
     }
 
-    /**
-     * @param string[] $urls
-     * @throws GuzzleException
-     */
-    private function sendPurgeRequest(ClientInterface $client, string $apiKey, array $urls): void
+    /** @return array{Uri, array<string, string>} */
+    private function connection(): array
     {
-        $client->request('POST', App::parseEnv($this->apiUrl), [
-            'headers' => array_merge(
-                ['Content-Type' => 'application/json'],
-                $this->authHeaders($apiKey),
-            ),
-            'json' => ['urls' => $urls],
-        ]);
-    }
-
-    /** @return array<string, string> */
-    private function authHeaders(string $apiKey): array
-    {
-        return match ($this->authType) {
-            'bearer' => ['Authorization' => "Bearer {$apiKey}"],
-            default => ['AccessKey' => $apiKey],
+        $key = App::parseEnv($this->apiKey);
+        if (!is_string($key) || trim($key) === '') {
+            throw new PurgeException('Bunny CDN purge API key not configured.');
+        }
+        $url = App::parseEnv($this->apiUrl);
+        if (!is_string($url) || !filter_var($url, FILTER_VALIDATE_URL)) {
+            throw new PurgeException('An absolute HTTP or HTTPS purge API URL is required.');
+        }
+        $endpoint = new Uri($url);
+        if (!in_array($endpoint->getScheme(), ['https', 'http'], true) || $endpoint->getUserInfo() !== '' || $endpoint->getFragment() !== '') {
+            throw new PurgeException('The purge API URL must use HTTP or HTTPS without credentials or a fragment.');
+        }
+        if (strtolower($endpoint->getHost()) === 'api.bunny.net' && ($endpoint->getScheme() !== 'https' || $endpoint->getPath() !== '/purge')) {
+            throw new PurgeException('The Bunny Core API purge endpoint is https://api.bunny.net/purge.');
+        }
+        $headers = match (App::parseEnv($this->authType)) {
+            'bearer' => ['Authorization' => "Bearer {$key}"],
+            'access_key' => ['AccessKey' => $key],
+            default => throw new PurgeException('Authentication type must be access_key or bearer.'),
         };
+        return [$endpoint, $headers];
     }
 }

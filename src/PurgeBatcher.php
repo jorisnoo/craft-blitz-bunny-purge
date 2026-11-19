@@ -59,7 +59,7 @@ final class PurgeBatcher
      */
     public static function isWildcard(string $url): bool
     {
-        return str_contains($url, '*') || str_ends_with($url, '/');
+        return str_contains($url, '*') || str_ends_with((string) parse_url($url, PHP_URL_PATH), '/');
     }
 
     /**

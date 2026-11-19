@@ -9,7 +9,7 @@ When Blitz invalidates cached content, this purger automatically sends purge req
 - Automatic CDN cache purging when content changes
 - Wildcard purging for full site clears (sends `site/*` instead of enumerating every URL)
 - Batched URL purging that stays within Bunny's request size and rate limits
-- Rate-limited and failed requests are retried through the Craft queue
+- Rate-limited and failed requests are retried through Blitz's queue (or before returning when explicitly run inline)
 - Configurable API endpoint and authentication method
 - Environment variable support for all settings
 
@@ -40,7 +40,7 @@ Then go to **Settings > Plugins** in the Craft control panel and install the plu
 | **API URL** | The Bunny CDN purge API endpoint | `https://api.bunny.net/purge` |
 | **API Key** | Your Bunny CDN API key | — |
 | **Authentication Type** | `Access Key` or `Bearer Token` | `Access Key` |
-| **Batch Size** | Maximum URLs sent in each purge request (at most 50; larger values are treated as 50) | `50` |
+| **Batch Size** | Maximum URLs per JSON request to a custom gateway (1–50); the Bunny Core API accepts one URL per request | `50` |
 
 All settings support environment variables (e.g., `$BUNNY_API_KEY`).
 
@@ -79,24 +79,17 @@ return [
 
 ### Individual URL Purging
 
-When Blitz invalidates specific URLs, the purger sends them to the Bunny CDN API in batches of up to 50 URLs (the configured batch size, capped at Bunny's limit of 50 per request):
+The [Bunny Core API](https://bunny.net/docs/api-reference/core/purge/purge-url) takes one URL per authenticated request:
 
 ```
-POST https://api.bunny.net/purge
-{"urls": ["https://example.com/page-1", "https://example.com/page-2"]}
+POST https://api.bunny.net/purge?url=https%3A%2F%2Fexample.com%2Fpage-1
 ```
+
+An explicitly configured gateway receives `POST` with a JSON body such as `{"urls":["https://example.com/page-1","https://example.com/page-2"]}`. The gateway batch size is capped at 50 even if configuration bypasses control-panel validation.
 
 ### Site Purging
 
-When an entire site is purged, the purger sends a wildcard purge instead of enumerating every URL. Purging all sites sends one deduplicated list for every site, in a queue job (or inline when Blitz is asked not to queue):
-
-```
-POST https://api.bunny.net/purge
-{"urls": ["https://example.com"]}
-
-POST https://api.bunny.net/purge
-{"urls": ["https://example.com/*"]}
-```
+When an entire site is purged, the purger sends the base URL (`https://example.com`) and a wildcard (`https://example.com/*`) instead of enumerating every URL. Purging all sites sends one deduplicated list across sites. Initial jobs, retries and delayed batches use Blitz's own purger job type, so a full refresh can release pending purges on Blitz's supported Craft queue. Already-running requests are not revoked.
 
 Site purges do not fire Blitz's `beforePurgeCache` and `afterPurgeCache` events, the same as Blitz's Cloudflare purger. `beforePurgeAllCache` and `afterPurgeAllCache` still fire. Sites without URLs or without an absolute base URL are skipped.
 
@@ -109,9 +102,9 @@ Bunny rate-limits purges per account with a separate token bucket for each purge
 | Exact | A plain URL | ~120 | 5 per second |
 | Wildcard | A URL that contains `*` or ends with `/` | ~20 | 0.5 per second |
 
-A request that mixes both types is charged to both buckets, so the purger never mixes them. Exact URLs go in batches of up to 50, and wildcard URLs in batches of up to 15. Each run sends at most 100 exact and 15 wildcard URLs; the rest are queued in a delayed job for when the buckets have refilled. URLs ending in `/` (the homepage, or every page when `addTrailingSlashesToUrls` is on) count as wildcard purges, so purging many of them is slow: about 30 per minute.
+Exact and wildcard URLs are kept separate. Compatible gateways receive up to 50 exact or 15 wildcard URLs per request. Each run sends at most 100 exact and 15 wildcard URLs; the rest wait for the buckets to refill. Paths ending in `/`, including paths with a query string, count as wildcard purges, so purging many of them is slow: about 30 per minute.
 
-If Bunny responds with `429 Too Many Requests`, the unsent URLs are queued again after the `Retry-After` wait. That wait is floored to the bucket's refill window (10 seconds for exact, 30 seconds for wildcard), because Bunny's advertised wait can be too short, and capped at 5 minutes. Server errors and connection failures are retried the same way with an increasing delay. After Blitz's `maxRetryAttempts` consecutive failures, or on a response that retrying cannot fix (such as `400` or `401`), the queue job fails and the error is written to the Blitz log.
+On `429 Too Many Requests`, the purger honors `Retry-After`, floored to the bucket's refill window and capped at 5 minutes. Server errors and connection failures retry with increasing delays. Only failures of the same batch count toward Blitz's `maxRetryAttempts`. The worker fails on exhausted retries, invalid configuration or a permanent rejection (e.g. `401`). Queued operations schedule remaining work; with `queue: false`, the call waits for pacing and retries and returns only on completion or throws. Use a queue or a long-running CLI process for large purges.
 
 Purge requests time out after 30 seconds (10 seconds to connect).
 
@@ -119,6 +112,18 @@ Purge requests time out after 30 seconds (10 seconds to connect).
 
 - **Access Key** (default): Sends an `AccessKey` header
 - **Bearer Token**: Sends an `Authorization: Bearer` header
+
+Use HTTPS to protect credentials. The settings connection test never purges content or follows redirects. For the Bunny Core API it calls the authenticated [list pull zones endpoint](https://bunny.net/docs/api-reference/core/pull-zone/list-pull-zones) with `page=1&perPage=5`; the test requires read access to that endpoint and does not prove purge permissions. Custom gateways should support an authenticated, non-mutating `GET` at their configured purge URL and return `2xx` on success. A `405` means the gateway does not support connection testing, not necessarily that its purge credentials are invalid.
+
+## HTTP Generator
+
+Select **Bunny HTTP Generator** in Blitz, or set this in `config/blitz.php`:
+
+```php
+'cacheGeneratorType' => \Noo\CraftBlitzBunnyPurge\HttpGenerator::class,
+```
+
+It keeps Blitz's HTTP generator settings and sends `User-Agent: Blitz-Cache-Generator` so CDN rules or analytics can identify cache-warming traffic. The header is not authentication.
 
 ## License
 
