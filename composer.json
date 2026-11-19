@@ -32,7 +32,9 @@
         "putyourlightson/craft-blitz": "^5.0"
     },
     "require-dev": {
-        "pestphp/pest": "^4.4"
+        "craftcms/phpstan": "dev-main",
+        "pestphp/pest": "^3.8 || ^4.4",
+        "phpstan/phpstan": "^2.1"
     },
     "autoload": {
         "psr-4": {

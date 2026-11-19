@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - 2026-11-19
+
+### Fixed
+
+- Send Bunny Core API purges using its documented URL query parameter; compatible custom gateways retain bounded JSON batches. Exact and wildcard paths have separate pacing, including trailing-slash paths with a query.
+- Honor rate limits and timeouts, isolate retries by batch and report missing credentials, permanent failures and exhausted retries. Explicitly inline purges finish or throw; full refreshes can cancel pending purger jobs.
+- Validate the endpoint and authentication mode and use a read-only request for the Blitz settings connection test. See the README for custom gateway and permission requirements.
+
+### Added
+
+- The bundled cache warmer is now selectable as **Bunny HTTP Generator** in Blitz.
+
 ## [1.0.1](https://github.com/jorisnoo/craft-blitz-bunny-purge/releases/tag/1.0.1) (2026-07-14)
 
 ### Features

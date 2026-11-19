@@ -12,7 +12,11 @@ Configured release checks:
 
 ```sh
 composer validate --no-check-publish --no-plugins
+vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+bash scripts/with-test-mysql.sh vendor/bin/pest
 ```
+
+Install MySQL Server and its CLI (`mysqld` and `mysql`) and enable PHP's `pdo_mysql` extension. `just test` uses a fresh disposable MySQL data directory and Unix socket, not a configured Craft database; the cancellation regression exercises Blitz's actual binary queue lookup.
 
 Install the project’s normal dependencies first. The helper runs these checks when publishing; dry-run prints them without executing them. Run any additional checks needed for the changed behavior before committing.
 
