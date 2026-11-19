@@ -133,13 +133,18 @@ it('lets Blitz release pending continuations but not reserved or unrelated jobs'
     $this->purger->resumeBunnyPurge(['urls' => ['https://example.test/a'], 'attempt' => 0, 'tail' => []], static function() {});
     $job = $this->jobs[0]->job;
     expect($job)->toBeInstanceOf(DriverJob::class)->and($job->driverMethod)->toBe('resumeBunnyPurge');
-    $db = new Connection(['dsn' => 'sqlite::memory:', 'schemaCache' => null]);
-    $db->createCommand()->createTable('queue', ['id' => 'integer','job' => 'text', 'dateReserved' => 'integer'])->execute();
+    $socket = getenv('BUNNY_TEST_MYSQL_SOCKET');
+    if (!$socket) {
+        throw new RuntimeException('Run the suite with: bash scripts/with-test-mysql.sh vendor/bin/pest');
+    }
+    $db = new Connection(['dsn' => "mysql:unix_socket={$socket};dbname=bunny_queue_test", 'username' => 'root']);
+    $db->createCommand('CREATE TEMPORARY TABLE queue (id INT, job LONGBLOB, dateReserved INT)')->execute();
     $other = clone $job;
     $other->driverId = 'cacheGenerator';
-    $db->createCommand()->batchInsert('queue', ['id','job','dateReserved'], [
-        [1, serialize($job), null], [2, serialize($job), 123], [3, serialize($other), null],
-    ])->execute();
+    $insert = $db->createCommand('INSERT INTO queue (id,job,dateReserved) VALUES (:id,:job,:reserved)');
+    foreach ([[1, $job, null], [2, $job, 123], [3, $other, null]] as [$id, $payload, $reserved]) {
+        $insert->bindValues([':id' => $id, ':job' => serialize($payload), ':reserved' => $reserved])->execute();
+    }
     $queue = $this->getMockBuilder(\craft\queue\Queue::class)->disableOriginalConstructor()->onlyMethods(['release'])->getMock();
     $queue->tableName = 'queue';
     $queue->expects($this->once())->method('release')->with('1');

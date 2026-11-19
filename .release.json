@@ -10,6 +10,6 @@
       "--no-plugins"
     ],
     ["vendor/bin/phpstan", "analyse", "--memory-limit=1G", "--no-progress"],
-    ["vendor/bin/pest"]
+    ["bash", "scripts/with-test-mysql.sh", "vendor/bin/pest"]
   ]
 }

@@ -24,13 +24,13 @@ jobs:
       - uses: shivammathur/setup-php@2.40.0
         with:
           php-version: ${{ matrix.php }}
-          extensions: bcmath, curl, gd, intl, mbstring, pdo_sqlite, zip
+          extensions: bcmath, curl, gd, intl, mbstring, pdo_mysql, zip
           coverage: none
       - run: composer validate --no-check-publish --no-plugins
       - run: composer install --prefer-dist --no-interaction
       - run: composer audit --no-plugins
       - run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
-      - run: vendor/bin/pest
+      - run: bash scripts/with-test-mysql.sh vendor/bin/pest
 
   required:
     name: Package checks

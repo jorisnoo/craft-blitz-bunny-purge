@@ -12,4 +12,4 @@ update:
 
 # Run tests
 test:
-    vendor/bin/pest
+    bash scripts/with-test-mysql.sh vendor/bin/pest
