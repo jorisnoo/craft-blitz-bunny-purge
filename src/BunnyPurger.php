@@ -159,7 +159,8 @@ class BunnyPurger extends BaseCachePurger
                     try {
                         $options = ['headers' => $headers, 'allow_redirects' => false, 'http_errors' => true];
                         if ($native) {
-                            $uri = Uri::withQueryValue($endpoint, 'url', $batch->urls[0]);
+                            // The nested URL is data, including any existing percent escapes.
+                            $uri = Uri::withQueryValue($endpoint, 'url', rawurlencode($batch->urls[0]));
                         } else {
                             $uri = $endpoint;
                             $options['json'] = ['urls' => $batch->urls];

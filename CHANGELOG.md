@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.1] - 2026-11-19
+
+### Fixed
+
+- Preserve the exact URL cache key in Bunny Core API purges, including encoded slashes, spaces and query parameters within the URL being purged.
+
 ## [1.1.0] - 2026-11-19
 
 ### Fixed
